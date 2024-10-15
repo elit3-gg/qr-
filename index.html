@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>QR Code Scanner and Media Player</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black;
+        }
+        #mediaContainer {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        video#videoPlayer, img#imageDisplay {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        video::-webkit-media-controls,
+        video::-moz-media-controls,
+        video::-ms-media-controls {
+            display: none !important;
+        }
+        video#preview {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 200px;
+            height: 150px;
+            border: 2px solid white;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Media container -->
+    <div id="mediaContainer">
+        <!-- Video player -->
+        <video id="videoPlayer" autoplay muted loop playsinline style="display: none;">
+            <source id="videoSource" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <!-- Image display -->
+        <img id="imageDisplay" style="display: none;" alt="Scanned Image">
+    </div>
+
+    <!-- Webcam feed for debugging -->
+    <video id="preview" autoplay muted playsinline></video>
+
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered successfully:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            });
+        }
+
+        const mediaContainer = document.getElementById('mediaContainer');
+        const videoElement = document.getElementById('videoPlayer');
+        const sourceElement = document.getElementById('videoSource');
+        const imageElement = document.getElementById('imageDisplay');
+        const preview = document.getElementById('preview');
+        let currentMediaURL = null;
+
+        // Initialize the QR code reader
+        const codeReader = new ZXing.BrowserQRCodeReader();
+
+        // Start the QR code scanning process
+        codeReader.getVideoInputDevices().then((videoInputDevices) => {
+            const firstDeviceId = videoInputDevices[0].deviceId;
+
+            const constraints = {
+                video: {
+                    deviceId: { exact: firstDeviceId },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            };
+
+            codeReader.decodeFromConstraints(constraints, preview, (result, err) => {
+                if (result) {
+                    console.log('QR Code Scanned:', result.text);
+
+                    if (result.text !== currentMediaURL) {
+                        currentMediaURL = result.text;
+
+                        // Determine if it's an image or video based on file extension
+                        const isImage = /\.(jpg|jpeg|png|gif|bmp)$/i.test(result.text);
+
+                        if (isImage) {
+                            // Display image
+                            displayImage(result.text);
+                        } else {
+                            // Play video
+                            playVideo(result.text);
+                        }
+                    } else {
+                        console.log('Same QR code scanned; checking cache...');
+                        checkCache(result.text);
+                    }
+                }
+
+                if (err && !(err instanceof ZXing.NotFoundException)) {
+                    console.error('An error occurred during scanning:', err);
+                }
+            });
+        }).catch((err) => {
+            console.error('Error accessing video devices:', err);
+        });
+
+        // Function to enter full-screen mode
+        function requestFullScreen(element) {
+            if (element.requestFullscreen) {
+                element.requestFullscreen();
+            } else if (element.mozRequestFullScreen) {
+                element.mozRequestFullScreen();
+            } else if (element.webkitRequestFullscreen) {
+                element.webkitRequestFullscreen();
+            } else if (element.msRequestFullscreen) {
+                element.msRequestFullscreen();
+            }
+        }
+
+        function preloadImages(imageUrls) {
+            imageUrls.forEach(url => {
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        console.log(`Image ${url} preloaded successfully`);
+                    })
+                    .catch(e => {
+                        console.error(`Error preloading image ${url}:`, e);
+                    });
+            });
+        }
+
+        preloadImages([
+            'path/to/image1.jpg',
+            'path/to/image2.png',
+            // Add more image URLs as needed
+        ]);
+
+        // New function to display image
+        function displayImage(url) {
+            console.log('Attempting to display image from:', url);
+            videoElement.style.display = 'none';
+            imageElement.style.display = 'block';
+            
+            // Use the cache if available
+            caches.match(url).then(response => {
+                if (response) {
+                    console.log('Image found in cache');
+                    return response.blob();
+                }
+                console.log('Image not in cache, fetching from network');
+                return fetch(url).then(res => res.blob());
+            }).then(blob => {
+                imageElement.src = URL.createObjectURL(blob);
+                console.log('Image displayed successfully');
+            }).catch(error => {
+                console.error('Error displaying image:', error);
+            });
+        }
+
+        // New function to play video
+        function playVideo(url) {
+            console.log('Attempting to play video from:', url);
+            imageElement.style.display = 'none';
+            videoElement.style.display = 'block';
+            
+            // Use the cache if available
+            caches.match(url).then(response => {
+                if (response) {
+                    console.log('Video found in cache');
+                    return response.blob();
+                }
+                console.log('Video not in cache, fetching from network');
+                return fetch(url).then(res => res.blob());
+            }).then(blob => {
+                sourceElement.src = URL.createObjectURL(blob);
+                videoElement.load();
+                return videoElement.play();
+            }).then(() => {
+                requestFullScreen(mediaContainer);
+                console.log('Video played successfully');
+            }).catch(error => {
+                console.error('Error playing video:', error);
+            });
+        }
+
+        // New function to check cache
+        function checkCache(url) {
+            caches.match(url).then(response => {
+                if (response) {
+                    console.log('Media found in cache');
+                    const isImage = /\.(jpg|jpeg|png|gif|bmp)$/i.test(url);
+                    if (isImage) {
+                        displayImage(url);
+                    } else {
+                        playVideo(url);
+                    }
+                } else {
+                    console.log('Media not found in cache');
+                }
+            }).catch(error => {
+                console.error('Error checking cache:', error);
+            });
+        }
+    </script>
+
+</body>
+</html>
