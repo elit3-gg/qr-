@@ -21,6 +21,9 @@
             height: 100%;
             object-fit: contain;
         }
+        video#videoPlayer {
+            display: none; /* Hide the video element */
+        }
         video::-webkit-media-controls,
         video::-moz-media-controls,
         video::-ms-media-controls {
@@ -41,8 +44,8 @@
 
     <!-- Media container -->
     <div id="mediaContainer">
-        <!-- Video player -->
-        <video id="videoPlayer" autoplay muted loop playsinline style="display: none;">
+        <!-- Video player (hidden) -->
+        <video id="videoPlayer" autoplay muted loop playsinline>
             <source id="videoSource" type="video/mp4">
             Your browser does not support the video tag.
         </video>
@@ -184,7 +187,7 @@
         function playVideo(url) {
             console.log('Attempting to play video from:', url);
             imageElement.style.display = 'none';
-            videoElement.style.display = 'block';
+            videoElement.style.display = 'none'; // Keep video element hidden
             
             // Use the cache if available
             caches.match(url).then(response => {
@@ -199,7 +202,6 @@
                 videoElement.load();
                 return videoElement.play();
             }).then(() => {
-                requestFullScreen(mediaContainer);
                 console.log('Video played successfully');
             }).catch(error => {
                 console.error('Error playing video:', error);
